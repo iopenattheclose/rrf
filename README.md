@@ -167,10 +167,3 @@ query -> cosine ranks all 50 docs -+     -> contributions summed -> sorted by RR
 
 - If a query shares no words with any document, all BM25 scores are zero, so its ranks are just corpus order. RRF still works, but BM25 adds no real signal for that query.
 - Both retrievers rank the full corpus, so every document appears in both lists.
-
-## Planned next steps
-
-- A Flask API wrapping `HybridSearch.search()`, with `k` taken from the request.
-- A simple web UI with a slider to vary `k` live.
-- Create one `HybridSearch` instance at app startup, not per request, so the model and embeddings load once.
-- The result dicts convert directly to JSON with `jsonify`.
