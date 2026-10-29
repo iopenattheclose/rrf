@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RRF Hybrid Search</title>
+  <style>
+    :root {
+      --bg: #0e1015;
+      --panel: #161a22;
+      --panel-2: #1c212b;
+      --border: #2a303c;
+      --text: #e6e8ee;
+      --muted: #8a93a6;
+      --accent: #7c9cff;
+      --bm25: #f5a65b;
+      --cosine: #5bd1b5;
+      --rrf: #b48cff;
+      --hover: #232a38;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      line-height: 1.45;
+    }
+    .wrap { max-width: 1400px; margin: 0 auto; padding: 24px 20px 48px; }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    .sub { color: var(--muted); margin: 0 0 20px; font-size: 14px; }
+
+    .controls {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+    @media (max-width: 800px) { .controls { grid-template-columns: 1fr; } }
+    label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+    input[type="text"] {
+      width: 100%;
+      background: var(--panel-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 15px;
+      outline: none;
+    }
+    input[type="text"]:focus { border-color: var(--accent); }
+    .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+    .k-row { display: flex; align-items: center; gap: 14px; }
+    .k-value {
+      min-width: 52px;
+      text-align: center;
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-weight: 600;
+      color: var(--rrf);
+      font-variant-numeric: tabular-nums;
+    }
+    input[type="range"] { flex: 1; accent-color: var(--rrf); height: 4px; cursor: pointer; }
+    .formula { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color: var(--muted); margin-top: 8px; }
+    .formula b { color: var(--rrf); font-weight: 600; }
+
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .full { grid-column: 1 / -1; }
+    @media (max-width: 1000px) { .grid { grid-template-columns: 1fr; } }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .card h2 {
+      font-size: 15px;
+      margin: 0;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+    }
+    .card h2 small { color: var(--muted); font-weight: 400; font-size: 12px; }
+    .card.bm25 h2 { border-top: 3px solid var(--bm25); }
+    .card.cosine h2 { border-top: 3px solid var(--cosine); }
+    .card.rrf h2 { border-top: 3px solid var(--rrf); }
+    .note { padding: 8px 16px; font-size: 12px; color: var(--bm25); background: #2a2217; display: none; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th {
+      text-align: left;
+      color: var(--muted);
+      font-weight: 500;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    tr:last-child td { border-bottom: none; }
+    tbody tr:hover, tbody tr.hl { background: var(--hover); }
+    td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+    td.text { color: #c5cad6; }
+    tr.zero td { opacity: 0.45; }
+    .empty { padding: 28px 16px; color: var(--muted); text-align: center; font-size: 14px; }
+
+    .badge {
+      display: inline-block;
+      min-width: 28px;
+      text-align: center;
+      padding: 1px 7px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+    }
+    .badge.bm25 { background: #3a2c1a; color: var(--bm25); }
+    .badge.cosine { background: #17352f; color: var(--cosine); }
+    .score-rrf { color: var(--rrf); font-weight: 600; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Reciprocal Rank Fusion</h1>
+  <p class="sub">BM25 (keyword) + cosine similarity (semantic), merged with RRF. Type a query and press Enter, then drag the slider to change k.</p>
+
+  <div class="controls">
+    <div>
+      <label for="query">Query</label>
+      <input id="query" type="text" placeholder="e.g. Tesla Model S, jaguar, how do chatbots find documents" autocomplete="off" autofocus>
+      <div class="hint">Press Enter to search</div>
+    </div>
+    <div>
+      <label for="k">RRF constant k</label>
+      <div class="k-row">
+        <input id="k" type="range" min="{{ k_min }}" max="{{ k_max }}" step="1" value="{{ k_default }}">
+        <div class="k-value" id="k-value">{{ k_default }}</div>
+      </div>
+      <div class="formula">RRF score = <b>1 / (<span class="kk">{{ k_default }}</span> + rank<sub>BM25</sub>)</b> + <b>1 / (<span class="kk">{{ k_default }}</span> + rank<sub>cosine</sub>)</b></div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card bm25">
+      <h2>1. BM25 <small>keyword match</small></h2>
+      <div class="note" id="bm25-note">No query word appears in any document, so BM25 scores are all 0 and its order is just corpus order.</div>
+      <table>
+        <thead><tr><th>Rank</th><th>Doc</th><th>BM25 score</th><th>Text</th></tr></thead>
+        <tbody id="bm25-body"></tbody>
+      </table>
+      <div class="empty" id="bm25-empty">Enter a query to see results.</div>
+    </div>
+
+    <div class="card cosine">
+      <h2>2. Semantic <small>cosine similarity</small></h2>
+      <table>
+        <thead><tr><th>Rank</th><th>Doc</th><th>Cosine</th><th>Text</th></tr></thead>
+        <tbody id="cosine-body"></tbody>
+      </table>
+      <div class="empty" id="cosine-empty">Enter a query to see results.</div>
+    </div>
+
+    <div class="card rrf full">
+      <h2>3. RRF fusion <small id="rrf-sub">k = {{ k_default }}</small></h2>
+      <table>
+        <thead><tr><th>Rank</th><th>Doc</th><th>BM25 rank</th><th>Cosine rank</th><th>RRF score</th><th>Text</th></tr></thead>
+        <tbody id="rrf-body"></tbody>
+      </table>
+      <div class="empty" id="rrf-empty">Enter a query to see results.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const queryInput = document.getElementById("query");
+  const kSlider = document.getElementById("k");
+  const kValue = document.getElementById("k-value");
+
+  let currentQuery = "";   // last query submitted with Enter
+  let requestId = 0;       // used to ignore out-of-date responses
+  let debounceTimer = null;
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, c => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    }[c]));
+  }
+
+  function setK(k) {
+    kValue.textContent = k;
+    document.getElementById("rrf-sub").textContent = "k = " + k;
+    document.querySelectorAll(".kk").forEach(el => { el.textContent = k; });
+  }
+
+  function fill(bodyId, emptyId, rowsHtml, hasRows, emptyText) {
+    document.getElementById(bodyId).innerHTML = rowsHtml;
+    const empty = document.getElementById(emptyId);
+    empty.style.display = hasRows ? "none" : "block";
+    if (!hasRows) empty.textContent = emptyText;
+  }
+
+  function render(data) {
+    const emptyText = data.query ? "No results." : "Enter a query to see results.";
+
+    const bm25Rows = data.bm25.map(r => `
+      <tr data-doc="${r.doc_id}" class="${r.score === 0 ? "zero" : ""}">
+        <td class="num">${r.rank}</td>
+        <td class="num">${r.doc_id}</td>
+        <td class="num">${r.score.toFixed(3)}</td>
+        <td class="text">${esc(r.text)}</td>
+      </tr>`).join("");
+
+    const cosineRows = data.cosine.map(r => `
+      <tr data-doc="${r.doc_id}">
+        <td class="num">${r.rank}</td>
+        <td class="num">${r.doc_id}</td>
+        <td class="num">${r.score.toFixed(3)}</td>
+        <td class="text">${esc(r.text)}</td>
+      </tr>`).join("");
+
+    const rrfRows = data.rrf.map(r => `
+      <tr data-doc="${r.doc_id}">
+        <td class="num">${r.rank}</td>
+        <td class="num">${r.doc_id}</td>
+        <td class="num"><span class="badge bm25">${r.bm25_rank}</span></td>
+        <td class="num"><span class="badge cosine">${r.cosine_rank}</span></td>
+        <td class="num score-rrf">${r.score.toFixed(5)}</td>
+        <td class="text">${esc(r.text)}</td>
+      </tr>`).join("");
+
+    fill("bm25-body", "bm25-empty", bm25Rows, data.bm25.length > 0, emptyText);
+    fill("cosine-body", "cosine-empty", cosineRows, data.cosine.length > 0, emptyText);
+    fill("rrf-body", "rrf-empty", rrfRows, data.rrf.length > 0, emptyText);
+
+    // Warn when BM25 matched nothing (all scores are 0)
+    const allZero = data.bm25.length > 0 && data.bm25.every(r => r.score === 0);
+    document.getElementById("bm25-note").style.display = allZero ? "block" : "none";
+  }
+
+  async function search() {
+    const id = ++requestId;
+    const params = new URLSearchParams({ q: currentQuery, k: kSlider.value });
+    try {
+      const resp = await fetch("/api/search?" + params.toString());
+      const data = await resp.json();
+      if (id !== requestId) return;   // a newer request has been sent
+      render(data);
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  // Enter in the query box -> recalculate with the new query
+  queryInput.addEventListener("keydown", e => {
+    if (e.key === "Enter") {
+      currentQuery = queryInput.value.trim();
+      search();
+    }
+  });
+
+  // Slider -> update k label immediately, recalculate (debounced) with the current query
+  kSlider.addEventListener("input", () => {
+    setK(kSlider.value);
+    if (!currentQuery) return;
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(search, 120);
+  });
+
+  // Hover a row to highlight the same document in all three tables
+  document.addEventListener("mouseover", e => {
+    const row = e.target.closest("tr[data-doc]");
+    document.querySelectorAll("tr.hl").forEach(r => r.classList.remove("hl"));
+    if (row) {
+      document.querySelectorAll(`tr[data-doc="${row.dataset.doc}"]`).forEach(r => r.classList.add("hl"));
+    }
+  });
+
+  setK(kSlider.value);
+</script>
+</body>
+</html>
